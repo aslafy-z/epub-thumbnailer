@@ -17,7 +17,8 @@
 # Version: 1.0
 # Name: epub-thumbnailer
 # Description: An implementation of a cover thumbnailer for epub files
-# Installation: see README
+# Installation: see 
+#
 
 import os
 import re
@@ -33,8 +34,7 @@ except ImportError:
 img_ext_regex = re.compile(r'^.*\.(jpg|jpeg|png)$', flags=re.IGNORECASE)
 cover_regex = re.compile(r'.*cover.*\.(jpg|jpeg|png)', flags=re.IGNORECASE)
 
-def get_cover_from_manifest(epub):
-
+def _get_cover_from_manifest(epub):
     # open the main container
     container = epub.open("META-INF/container.xml")
     container_root = minidom.parseString(container.read())
@@ -64,7 +64,11 @@ def get_cover_from_manifest(epub):
 
     return None
 
-def get_cover_by_filename(epub):
+def _get_cover_by_filename(epub):
+    def _choose_best_image(images):
+        if images:
+            return max(images, key=lambda f: f.file_size)
+        return None
     no_matching_images = []
     for fileinfo in epub.filelist:
         if cover_regex.match(fileinfo.filename):
@@ -73,12 +77,13 @@ def get_cover_by_filename(epub):
             no_matching_images.append(fileinfo)
     return _choose_best_image(no_matching_images)
 
-def _choose_best_image(images):
-    if images:
-        return max(images, key=lambda f: f.file_size)
-    return None
 
-def extract_cover(cover_path):
+extraction_strategies = [
+    _get_cover_from_manifest,
+    _get_cover_by_filename
+]
+
+def _extract_cover(epub, cover_path, output_file, size):
     if cover_path:
         cover = epub.open(cover_path)
         im = Image.open(BytesIO(cover.read()))
@@ -89,24 +94,15 @@ def extract_cover(cover_path):
         return True
     return False
 
-# Which file are we working with?
-input_file = sys.argv[1]
-# Where do does the file have to be saved?
-output_file = sys.argv[2]
-# Required size?
-size = int(sys.argv[3])
 
-# An epub is just a zip
-epub = zipfile.ZipFile(input_file, "r")
+def extract(input_file, output_file, size = 200):
+    epub = zipfile.ZipFile(input_file, "r")
 
-extraction_strategies = [get_cover_from_manifest, get_cover_by_filename]
-
-for strategy in extraction_strategies:
-    try:
-        cover_path = strategy(epub)
-        if extract_cover(cover_path):
-            exit(0)
-    except Exception as ex:
-        print("Error getting cover using %s: " % strategy.__name__, ex)
-
-exit(1)
+    for strategy in extraction_strategies:
+        try:
+            cover_path = strategy(epub)
+            if _extract_cover(epub, cover_path, output_file, size):
+                return True
+        except Exception as ex:
+            print('Failed to 
+            return False
